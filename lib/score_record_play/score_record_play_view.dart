@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
+import '../common/widgets/common_alert_view.dart';
 import '../common/widgets/common_navigation_view.dart';
 import '../common/widgets/common_rounded_button.dart';
 import '../common/widgets/common_scorecard_view.dart';
+import '../score_result/score_result_view.dart';
 
 class ScoreRecordPlayView extends StatefulWidget {
   const ScoreRecordPlayView({
@@ -93,58 +95,152 @@ class _ScoreRecordPlayViewState extends State<ScoreRecordPlayView> {
     );
   }
 
+  void _ensureEntryForCurrentHole(List<int> holes) {
+    if (_currentIndex < 0 || _currentIndex >= holes.length) return;
+    final hole = holes[_currentIndex];
+    _entries.putIfAbsent(hole, () => _HoleEntry.empty(par: _defaultPar(hole)));
+  }
+
+  Future<void> _confirmResetHole(int hole) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return CommonAlertView(
+          title: '스코어 초기화',
+          subTitle: '해당 홀의 스코어를 초기화 하시겠습니까?',
+          primaryButtonTitle: '초기화',
+          secondaryButtonTitle: '취소',
+          onPrimaryTap: () => Navigator.of(dialogContext).pop(true),
+          onSecondaryTap: () => Navigator.of(dialogContext).pop(false),
+        );
+      },
+    );
+
+    if (result == true) {
+      _updateEntry(hole, _HoleEntry.empty(par: _defaultPar(hole)));
+    }
+  }
+
+  Future<void> _confirmFinishRound() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return CommonAlertView(
+          title: '라운드 종료',
+          subTitle: '라운드를 종료하시겠습니까?',
+          primaryButtonTitle: '종료',
+          secondaryButtonTitle: '취소',
+          onPrimaryTap: () => Navigator.of(dialogContext).pop(true),
+          onSecondaryTap: () => Navigator.of(dialogContext).pop(false),
+        );
+      },
+    );
+
+    if (result == true) {
+      if (!mounted) return;
+      final holes = _holesList();
+      _ensureEntryForCurrentHole(holes);
+      var totalStrokes = 0;
+      var totalPar = 0;
+      var totalPutts = 0;
+      var teeLeft = 0;
+      var teeCenter = 0;
+      var teeRight = 0;
+      var teeTotal = 0;
+      for (final hole in holes) {
+        final entry = _entries[hole] ?? _HoleEntry.empty(par: _defaultPar(hole));
+        totalStrokes += entry.strokes;
+        totalPar += entry.par;
+        totalPutts += entry.putts;
+        if (entry.teeDirection != null) {
+          teeTotal += 1;
+          if (entry.teeDirection == '좌') teeLeft += 1;
+          if (entry.teeDirection == '센터') teeCenter += 1;
+          if (entry.teeDirection == '우') teeRight += 1;
+        }
+      }
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ScoreResultView(
+            courseName: widget.courseName,
+            totalStrokes: totalStrokes,
+            totalPar: totalPar,
+            totalPutts: totalPutts,
+            holes: holes.length,
+            teeLeft: teeLeft,
+            teeCenter: teeCenter,
+            teeRight: teeRight,
+            teeTotal: teeTotal,
+          ),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final holes = _holesList();
+    final canGoPrev = _currentIndex > 0;
+    final canGoNext = _currentIndex < holes.length - 1;
     return Scaffold(
       backgroundColor: Colors.white,
       bottomNavigationBar: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
           child: Row(
             children: [
               Expanded(
                 child: SizedBox(
-                  height: 52,
+                  height: 50,
                   child: CommonRoundedButton(
                     title: '이전 홀',
                     radius: 14,
                     backgroundColor: const Color(0xFFF2F2F2),
                     textColor: Colors.black,
-                    onTap: () {
-                      setState(() {
-                        if (_currentIndex > 0) {
-                          _currentIndex -= 1;
-                        }
-                      });
-                      _pageController.animateToPage(
-                        _currentIndex,
-                        duration: const Duration(milliseconds: 250),
-                        curve: Curves.easeOut,
-                      );
-                    },
+                    onTap: canGoPrev
+                        ? () {
+                            setState(() {
+                              if (_currentIndex > 0) {
+                                _currentIndex -= 1;
+                              }
+                            });
+                            _pageController.animateToPage(
+                              _currentIndex,
+                              duration: const Duration(milliseconds: 250),
+                              curve: Curves.easeOut,
+                            );
+                          }
+                        : null,
                   ),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: SizedBox(
-                  height: 52,
+                  height: 50,
                   child: CommonRoundedButton(
-                    title: '다음 홀',
+                    title: canGoNext ? '다음 홀' : '종료',
                     radius: 14,
+                    backgroundColor:
+                        canGoNext ? Colors.black : Colors.black,
+                    textColor: canGoNext ? Colors.white : Colors.white,
                     onTap: () {
-                      setState(() {
-                        final holes = _holesList();
-                        if (_currentIndex < holes.length - 1) {
-                          _currentIndex += 1;
-                        }
-                      });
-                      _pageController.animateToPage(
-                        _currentIndex,
-                        duration: const Duration(milliseconds: 250),
-                        curve: Curves.easeOut,
-                      );
+                      if (canGoNext) {
+                        setState(() {
+                          _ensureEntryForCurrentHole(holes);
+                          if (_currentIndex < holes.length - 1) {
+                            _currentIndex += 1;
+                          }
+                        });
+                        _pageController.animateToPage(
+                          _currentIndex,
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeOut,
+                        );
+                      } else {
+                        _confirmFinishRound();
+                      }
                     },
                   ),
                 ),
@@ -163,7 +259,7 @@ class _ScoreRecordPlayViewState extends State<ScoreRecordPlayView> {
               backgroundColor: Colors.white,
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
               child: CommonScorecardView(
                 holes: widget.holes ?? 18,
                 startingHole: widget.startingHole,
@@ -180,7 +276,7 @@ class _ScoreRecordPlayViewState extends State<ScoreRecordPlayView> {
                 onHoleTap: _jumpToHole,
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 24),
             Expanded(
               child: PageView.builder(
                 controller: _pageController,
@@ -190,8 +286,8 @@ class _ScoreRecordPlayViewState extends State<ScoreRecordPlayView> {
                   final hole = _holesList()[index];
                   final entry =
                       _entries[hole] ?? _HoleEntry.empty(par: _defaultPar(hole));
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                  return SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
                     child: _HolePlayCard(
                       holeNumber: hole,
                       strokes: entry.strokes,
@@ -199,6 +295,7 @@ class _ScoreRecordPlayViewState extends State<ScoreRecordPlayView> {
                       par: entry.par,
                       teeDirection: entry.teeDirection,
                       teeResult: entry.teeResult,
+                      gir: entry.gir,
                       isActive: index == _currentIndex,
                       onCardTap: () => _jumpToHole(hole),
                       onStrokesChanged: (value) =>
@@ -212,14 +309,15 @@ class _ScoreRecordPlayViewState extends State<ScoreRecordPlayView> {
                       onTeeResultSelected: (value) =>
                           _updateEntry(hole, entry.copyWith(teeResult: value)),
                       onPenaltyAdd: () {},
-                      onGirToggle: () {},
+                      onGirChanged: (value) =>
+                          _updateEntry(hole, entry.copyWith(gir: value)),
+                      onReset: () => _confirmResetHole(hole),
                       asCard: false,
                     ),
                   );
                 },
               ),
             ),
-            const SizedBox(height: 24),
           ],
         ),
       ),
@@ -234,6 +332,7 @@ class _HoleEntry {
     required this.par,
     required this.teeDirection,
     required this.teeResult,
+    this.gir,
   });
 
   final int strokes;
@@ -241,12 +340,14 @@ class _HoleEntry {
   final int par;
   final String? teeDirection;
   final String teeResult;
+  final bool? gir;
 
   const _HoleEntry.empty({required this.par})
-      : strokes = 5,
-        putts = 2,
+      : strokes = 0,
+        putts = 0,
         teeDirection = null,
-        teeResult = '정상';
+        teeResult = '정상',
+        gir = null;
 
   _HoleEntry copyWith({
     int? strokes,
@@ -254,6 +355,7 @@ class _HoleEntry {
     int? par,
     String? teeDirection,
     String? teeResult,
+    bool? gir,
   }) {
     return _HoleEntry(
       strokes: strokes ?? this.strokes,
@@ -261,6 +363,7 @@ class _HoleEntry {
       par: par ?? this.par,
       teeDirection: teeDirection ?? this.teeDirection,
       teeResult: teeResult ?? this.teeResult,
+      gir: gir ?? this.gir,
     );
   }
 }
@@ -273,6 +376,7 @@ class _HolePlayCard extends StatelessWidget {
     required this.par,
     required this.teeDirection,
     required this.teeResult,
+    required this.gir,
     required this.isActive,
     required this.onCardTap,
     required this.onStrokesChanged,
@@ -281,7 +385,8 @@ class _HolePlayCard extends StatelessWidget {
     required this.onTeeDirectionSelected,
     required this.onTeeResultSelected,
     required this.onPenaltyAdd,
-    required this.onGirToggle,
+    required this.onGirChanged,
+    required this.onReset,
     this.asCard = true,
   });
 
@@ -291,6 +396,7 @@ class _HolePlayCard extends StatelessWidget {
   final int par;
   final String? teeDirection;
   final String teeResult;
+  final bool? gir;
   final bool isActive;
   final VoidCallback onCardTap;
   final ValueChanged<int> onStrokesChanged;
@@ -299,7 +405,8 @@ class _HolePlayCard extends StatelessWidget {
   final ValueChanged<String> onTeeDirectionSelected;
   final ValueChanged<String> onTeeResultSelected;
   final VoidCallback onPenaltyAdd;
-  final VoidCallback onGirToggle;
+  final ValueChanged<bool> onGirChanged;
+  final VoidCallback onReset;
   final bool asCard;
 
   @override
@@ -313,9 +420,9 @@ class _HolePlayCard extends StatelessWidget {
               '$holeNumber번홀',
               style: const TextStyle(
                 fontFamily: 'Pretendard',
-                fontSize: 17,
-                height: 1.0,
-                fontWeight: FontWeight.w400,
+                fontSize: 24,
+                height: 1.4,
+                fontWeight: FontWeight.w600,
                 color: Colors.black,
               ),
             ),
@@ -324,11 +431,16 @@ class _HolePlayCard extends StatelessWidget {
               par: par,
               onChanged: onParChanged,
             ),
+            const Spacer(),
+            _GhostButton(
+              label: '초기화',
+              onTap: onReset,
+            ),
           ],
         ),
-        const SizedBox(height: 2),
+        const SizedBox(height: 16),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           decoration: BoxDecoration(
             color: const Color(0xFFF7F8FA),
             borderRadius: BorderRadius.circular(14),
@@ -340,7 +452,7 @@ class _HolePlayCard extends StatelessWidget {
                 value: strokes,
                 onChanged: onStrokesChanged,
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 16),
               Row(
                 children: [
                   Expanded(
@@ -389,18 +501,23 @@ class _HolePlayCard extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 16),
               _StepperRow(
                 title: '퍼팅(옵션)',
                 value: putts,
                 onChanged: onPuttsChanged,
               ),
+              const SizedBox(height: 12),
+              _GirSelector(
+                value: gir,
+                onChanged: onGirChanged,
+              ),
             ],
           ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 16),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
             color: const Color(0xFFF7F8FA),
             borderRadius: BorderRadius.circular(14),
@@ -409,7 +526,71 @@ class _HolePlayCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const _SectionTitle(title: '티샷 결과(드라이버)'),
-              const SizedBox(height: 4),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => onTeeDirectionSelected('좌'),
+                      borderRadius: BorderRadius.circular(8),
+                      child: ColorFiltered(
+                        colorFilter: ColorFilter.mode(
+                          teeDirection == '좌'
+                              ? Colors.black
+                              : Colors.grey.shade200,
+                          BlendMode.srcIn,
+                        ),
+                        child: Image.asset(
+                          'assets/images/img_draw.webp',
+                          height: 44,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => onTeeDirectionSelected('센터'),
+                      borderRadius: BorderRadius.circular(8),
+                      child: ColorFiltered(
+                        colorFilter: ColorFilter.mode(
+                          teeDirection == '센터'
+                              ? Colors.black
+                              : Colors.grey.shade200,
+                          BlendMode.srcIn,
+                        ),
+                        child: Image.asset(
+                          'assets/images/img_straight.webp',
+                          height: 44,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => onTeeDirectionSelected('우'),
+                      borderRadius: BorderRadius.circular(8),
+                      child: ColorFiltered(
+                        colorFilter: ColorFilter.mode(
+                          teeDirection == '우'
+                              ? Colors.black
+                              : Colors.grey.shade200,
+                          BlendMode.srcIn,
+                        ),
+                        child: Image.asset(
+                          'assets/images/img_fade.webp',
+                          height: 44,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
               Row(
                 children: [
                   Expanded(
@@ -443,7 +624,7 @@ class _HolePlayCard extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 14),
               Row(
                 children: [
                   Expanded(
@@ -476,6 +657,7 @@ class _HolePlayCard extends StatelessWidget {
                   ),
                 ],
               ),
+              const SizedBox(height: 6),
             ],
           ),
         ),
@@ -534,10 +716,101 @@ class _SectionTitle extends StatelessWidget {
       title,
       style: const TextStyle(
         fontFamily: 'Pretendard',
-        fontSize: 12,
+        fontSize: 16,
         fontWeight: FontWeight.w600,
         color: Colors.black,
       ),
+    );
+  }
+}
+
+class _GirSelector extends StatelessWidget {
+  const _GirSelector({
+    required this.value,
+    required this.onChanged,
+  });
+
+  final bool? value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Row(
+          children: [
+            const Text(
+              'GIR',
+              style: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Colors.black,
+              ),
+            ),
+            const SizedBox(width: 6),
+            InkWell(
+              onTap: () {
+                showDialog<void>(
+                  context: context,
+                  builder: (dialogContext) {
+                    return CommonAlertView(
+                      title: 'GIR 안내',
+                      subTitle: 'GIR은 파 기준 규정 타수 안에 그린에 올렸는지를 의미합니다.',
+                      primaryButtonTitle: '확인',
+                      onPrimaryTap: () => Navigator.of(dialogContext).pop(),
+                    );
+                  },
+                );
+              },
+              borderRadius: BorderRadius.circular(999),
+              child: Container(
+                width: 20,
+                height: 20,
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFF2F2F2),
+                  shape: BoxShape.circle,
+                ),
+                child: const Text(
+                  '?',
+                  style: TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.black,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const Spacer(),
+        Expanded(
+          child: Row(
+            children: [
+              Expanded(
+                child: _SelectChip(
+                  label: '성공',
+                  isSelected: value == true,
+                  onTap: () => onChanged(true),
+                  expanded: true,
+                ),
+              ),
+              const SizedBox(width: 3),
+              Expanded(
+                child: _SelectChip(
+                  label: '실패',
+                  isSelected: value == false,
+                  onTap: () => onChanged(false),
+                  expanded: true,
+                  danger: true,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -562,7 +835,7 @@ class _StepperRow extends StatelessWidget {
             title,
             style: const TextStyle(
               fontFamily: 'Pretendard',
-              fontSize: 14,
+              fontSize: 16,
               fontWeight: FontWeight.w600,
               color: Colors.black,
             ),
@@ -585,7 +858,7 @@ class _StepperRow extends StatelessWidget {
             value.toString(),
             style: const TextStyle(
               fontFamily: 'Pretendard',
-              fontSize: 14,
+              fontSize: 16,
               fontWeight: FontWeight.w700,
               color: Colors.black,
             ),
@@ -618,26 +891,26 @@ class _ParStepper extends StatelessWidget {
           icon: Icons.remove,
           onTap: par > 3 ? () => onChanged(par - 1) : null,
         ),
-        const SizedBox(width: 6),
+        const SizedBox(width: 8),
         Container(
-          width: 48,
-          height: 24,
+          width: 64,
+          height: 32,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: const Color(0xFFF5F6F8),
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(8),
           ),
           child: Text(
             'Par $par',
             style: const TextStyle(
               fontFamily: 'Pretendard',
-              fontSize: 10,
+              fontSize: 14,
               fontWeight: FontWeight.w600,
               color: Colors.black,
             ),
           ),
         ),
-        const SizedBox(width: 6),
+        const SizedBox(width: 8),
         _StepButton(
           icon: Icons.add,
           onTap: par < 6 ? () => onChanged(par + 1) : null,
@@ -657,14 +930,14 @@ class _StepButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(8),
       child: Container(
-        width: 30,
-        height: 30,
+        width: 32,
+        height: 32,
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: const Color(0xFFF5F6F8),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(8),
         ),
         child: Icon(
           icon,
@@ -706,7 +979,7 @@ class _SelectChip extends StatelessWidget {
       borderRadius: BorderRadius.circular(999),
       child: Container(
         width: expanded ? double.infinity : null,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
           color: background,
           borderRadius: BorderRadius.circular(999),
@@ -717,7 +990,7 @@ class _SelectChip extends StatelessWidget {
                   label,
                   style: TextStyle(
                     fontFamily: 'Pretendard',
-                    fontSize: 11,
+                    fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: color,
                   ),
@@ -725,13 +998,13 @@ class _SelectChip extends StatelessWidget {
               : Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(icon, size: 14, color: color),
-                    const SizedBox(width: 4),
+                    Icon(icon, size: 16, color: color),
+                    const SizedBox(width: 6),
                     Text(
                       label,
                       style: TextStyle(
                         fontFamily: 'Pretendard',
-                        fontSize: 11,
+                        fontSize: 13,
                         fontWeight: FontWeight.w600,
                         color: color,
                       ),
@@ -758,8 +1031,8 @@ class _GhostButton extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: const Color(0xFFF5F6F8),
-          borderRadius: BorderRadius.circular(999),
+          color: Colors.red.shade50,
+          borderRadius: BorderRadius.circular(8),
         ),
         child: Text(
           label,
@@ -767,7 +1040,7 @@ class _GhostButton extends StatelessWidget {
             fontFamily: 'Pretendard',
             fontSize: 12,
             fontWeight: FontWeight.w600,
-            color: Color(0xFF3A3A3A),
+            color: Colors.red,
           ),
         ),
       ),

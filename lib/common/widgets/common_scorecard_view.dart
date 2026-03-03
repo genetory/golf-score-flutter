@@ -12,7 +12,7 @@ class CommonScorecardEntry {
   final int putts;
 }
 
-class CommonScorecardView extends StatelessWidget {
+class CommonScorecardView extends StatefulWidget {
   const CommonScorecardView({
     super.key,
     required this.holes,
@@ -27,7 +27,28 @@ class CommonScorecardView extends StatelessWidget {
   final ValueChanged<int> onHoleTap;
 
   @override
+  State<CommonScorecardView> createState() => _CommonScorecardViewState();
+}
+
+class _CommonScorecardViewState extends State<CommonScorecardView> {
+  bool _expanded = true;
+
+  String _summaryScore() {
+    var totalStrokes = 0;
+    var totalPar = 0;
+    for (final entry in widget.scores.values) {
+      totalStrokes += entry.strokes;
+      totalPar += entry.par;
+    }
+    if (totalStrokes == 0 || totalPar == 0) return '';
+    final diff = totalStrokes - totalPar;
+    if (diff == 0) return 'E';
+    return diff > 0 ? '+$diff' : diff.toString();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final summaryScore = _summaryScore();
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -44,22 +65,53 @@ class CommonScorecardView extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            '스코어카드',
-            style: TextStyle(
-              fontFamily: 'Pretendard',
-              fontSize: 16,
-              fontWeight: FontWeight.w500,
-              color: Colors.black,
+          InkWell(
+            onTap: () => setState(() => _expanded = !_expanded),
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                children: [
+                  const Text(
+                    '스코어카드',
+                    style: TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (summaryScore.isNotEmpty)
+                    Text(
+                      summaryScore,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black,
+                      ),
+                    ),
+                  const SizedBox(width: 6),
+                  Icon(
+                    _expanded
+                        ? Icons.keyboard_arrow_down
+                        : Icons.keyboard_arrow_right,
+                    size: 20,
+                    color: Colors.black,
+                  ),
+                ],
+              ),
             ),
           ),
-          const SizedBox(height: 6),
-          _ScoreCardTable(
-            holes: holes,
-            startingHole: startingHole,
-            scores: scores,
-            onHoleTap: onHoleTap,
-          ),
+          if (_expanded) const SizedBox(height: 12),
+          if (_expanded)
+            _ScoreCardTable(
+              holes: widget.holes,
+              startingHole: widget.startingHole,
+              scores: widget.scores,
+              onHoleTap: widget.onHoleTap,
+            ),
         ],
       ),
     );
@@ -116,6 +168,7 @@ class _ScoreCardTable extends StatelessWidget {
                     cellWidth: cellWidth,
                     holes: chunk,
                     totalLabel: totalLabel,
+                    onHoleTap: (index) => onHoleTap(chunk[index]),
                   ),
                   const SizedBox(height: 6),
                   _ValueRow(
@@ -129,7 +182,7 @@ class _ScoreCardTable extends StatelessWidget {
                     totalValue: _sumValues(
                       chunk.map((hole) => scores[hole]?.par).toList(),
                     ),
-                    onTap: null,
+                    onTap: (index) => onHoleTap(chunk[index]),
                   ),
                   _ValueRow(
                     label: 'SCORE',
@@ -148,6 +201,7 @@ class _ScoreCardTable extends StatelessWidget {
                     totalLabel: totalLabel,
                     totalValue: _sumValues(
                       chunk.map((hole) => scores[hole]?.strokes).toList(),
+                      requireComplete: true,
                     ),
                     onTap: (index) => onHoleTap(chunk[index]),
                   ),
@@ -161,8 +215,9 @@ class _ScoreCardTable extends StatelessWidget {
                     totalLabel: totalLabel,
                     totalValue: _sumValues(
                       chunk.map((hole) => scores[hole]?.putts).toList(),
+                      requireComplete: true,
                     ),
-                    onTap: null,
+                    onTap: (index) => onHoleTap(chunk[index]),
                     showDivider: false,
                   ),
                 ],
@@ -174,8 +229,14 @@ class _ScoreCardTable extends StatelessWidget {
     );
   }
 
-  String _sumValues(List<int?> values) {
+  String _sumValues(List<int?> values, {bool requireComplete = false}) {
+    if (requireComplete && values.any((value) => value == null)) {
+      return '';
+    }
     final sum = values.fold<int>(0, (acc, val) => acc + (val ?? 0));
+    if (requireComplete) {
+      return sum.toString();
+    }
     return sum == 0 ? '' : sum.toString();
   }
 }
@@ -186,24 +247,29 @@ class _HeaderRow extends StatelessWidget {
     required this.cellWidth,
     required this.holes,
     required this.totalLabel,
+    required this.onHoleTap,
   });
 
   final double labelWidth;
   final double cellWidth;
   final List<int> holes;
   final String totalLabel;
+  final ValueChanged<int> onHoleTap;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
         SizedBox(width: labelWidth),
-        ...holes.map(
-          (hole) => _HeaderCell(
-            width: cellWidth,
-            label: hole.toString(),
-          ),
-        ),
+        ...holes.asMap().entries.map(
+              (entry) => InkWell(
+                onTap: () => onHoleTap(entry.key),
+                child: _HeaderCell(
+                  width: cellWidth,
+                  label: entry.value.toString(),
+                ),
+              ),
+            ),
         if (totalLabel.isNotEmpty)
           _HeaderCell(
             width: cellWidth,
@@ -258,7 +324,7 @@ class _ValueRow extends StatelessWidget {
               fontFamily: 'Pretendard',
               fontSize: 12,
               fontWeight: FontWeight.w600,
-              color: Color(0xFF9A9288),
+              color: Colors.black,
             ),
           ),
         ),
@@ -293,7 +359,7 @@ class _ValueRow extends StatelessWidget {
                 fontFamily: 'Pretendard',
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: Color(0xFF6F665E),
+                color: Colors.black,
               ),
             ),
           ),
@@ -330,7 +396,7 @@ class _HeaderCell extends StatelessWidget {
             fontFamily: 'Pretendard',
             fontSize: 12,
             fontWeight: FontWeight.w600,
-            color: Color(0xFF7E756D),
+            color: Colors.black,
           ),
         ),
       ),
@@ -358,7 +424,7 @@ class _ScoreCellText extends StatelessWidget {
           fontFamily: 'Pretendard',
           fontSize: 11,
           fontWeight: FontWeight.w400,
-          color: label == 'SCORE' ? Colors.black : const Color(0xFF6F665E),
+          color: Colors.black,
         ),
       );
     }

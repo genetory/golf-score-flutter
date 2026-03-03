@@ -58,7 +58,7 @@ class CommonAlertView extends StatelessWidget {
                   const SizedBox(height: 8),
                   Text(
                     subTitle!,
-                    textAlign: TextAlign.center,
+                    textAlign: TextAlign.left,
                     style: const TextStyle(
                       fontFamily: 'Pretendard',
                       fontSize: 14,
